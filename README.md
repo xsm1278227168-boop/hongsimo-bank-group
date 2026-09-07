@@ -182,12 +182,13 @@ npm run preview   # 预览 dist/
 | 8 | `UPDATE` / `DELETE` transactions | 影响 0 行 |
 | 9 | 伪造 direction / type / created_by / currency | 全部被 RLS 拒绝 |
 | 10 | 第三人加入满员 household | `household is full` |
+| 11 | 固定名字 | 自定义名字被拒；创建者 = `Zod`，加入者自动 = `Sylvia` |
 
 全部通过会输出 `✅ 验证通过`。脚本以 `rollback` 结尾，**不会留下任何数据**，也不会动到你们已有的 household。
 
 ### 应用层（两台手机）
 
-- [ ] 两个账号分别登录；A 创建 household，B 用邀请码加入；第三个账号加入被拒。
+- [ ] 两个账号分别登录；一个创建 household 并选自己是 Zod 还是 Sylvia，另一个用邀请码加入并自动拿到剩下那个名字；第三个账号加入被拒。
 - [ ] A 记一笔，B 的手机 2 秒内出现该记录且余额更新。
 - [ ] 上表 7 个场景在 UI 上逐一复现。
 - [ ] 用 REST（带 A 的 JWT）直接 `PATCH` / `DELETE` `transactions`：返回 0 行或 401/403。
@@ -221,9 +222,17 @@ npm run preview   # 预览 dist/
 - **冲销** —— 新增一条金额相同、方向相反的记录把它抵消掉。
 - **修改** —— 冲销原记录 + 新增一条改好的。两条都会留在流水里。
 
-### 换了昵称，历史记录会变吗
+### 名字能改吗
 
-会显示新昵称（`transactions` 存的是 `payer_id`）。但类别存的是**名称文本**，所以改类别名或归档类别都不影响历史记录。
+不能。两位成员固定是 **Zod** 和 **Sylvia**：创建账本时选自己是哪一个，另一个人用邀请码加入时由数据库自动分配剩下的那个 —— 不用填，也不会撞名。
+
+数据库层用 `members_fixed_names` check 约束和 `members_unique_name` 唯一索引兜住，`members` 表没有 update 策略。
+
+想换成别的名字：改 [`src/lib/members.ts`](src/lib/members.ts) 里的 `MEMBER_NAMES`，同时改 `0001_init.sql` 里的 check 约束和 `create_household` / `join_household` 两个函数里的名字。
+
+### 改了类别名，历史记录会变吗
+
+不会。`transactions` 存的是类别的**名称文本**，所以改名或归档类别都不影响已有记录。
 
 ### 离线能记账吗
 
@@ -264,7 +273,7 @@ supabase/
 
 **「修改」推迟到提交时才冲销。** Brief 原本写的是点「修改」先调 `reverse_transaction`、再打开预填表单。那样一来，用户误点「修改」又关掉，原记录就已经被冲销了，留下一条没有替代品的作废记录。现在改成提交时才 `reverse` + `insert`（`ledger.replace`）：成功路径完全一样，只有「点开又放弃」这种情况不会再弄脏账本。抽屉里也写明了「提交后会先冲销原记录」。
 
-**`members` 的列级限制靠触发器。** 设置页要改昵称，就需要一条 `members` 的 update 策略。但 RLS 只能限制「哪一行」，限制不了「哪一列」，所以 migration 里额外加了一个 before-update 触发器，钉死 `household_id` / `user_id` / `joined_at`。两者合起来才等于「仅限自己、且只能改 display_name」。
+**名字由数据库分配，不由加入者填。** 加入账本的人受 RLS 限制，加入之前根本读不到对方占了哪个名字，所以让他自己填必然会撞名。`join_household` 因此不收名字参数，直接把剩下的那个分配给他。也因为名字固定，`members` 表不需要任何 update 策略。
 
 **汇总图表的坐标轴锚在 0。** `reverse_transaction` 把冲销记录的日期记成当天，所以「这个月冲销上个月的支出」会让本月某个类别变成负数。坐标轴固定从 0 起算，负数就画在 0 的左边，而不是被当成一个很小的正数。
 

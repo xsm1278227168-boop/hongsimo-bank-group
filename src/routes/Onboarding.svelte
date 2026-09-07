@@ -2,6 +2,7 @@
   import { household } from '../lib/household.svelte';
   import { session } from '../lib/session.svelte';
   import { toasts } from '../lib/toast.svelte';
+  import { MEMBER_NAMES, type MemberName } from '../lib/members';
 
   const CURRENCIES = ['CNY', 'HKD', 'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'SGD', 'AUD', 'CAD'];
 
@@ -11,20 +12,19 @@
   // create
   let name = $state('我们的账本');
   let currency = $state('CNY');
-  let createName = $state('');
+  let who = $state<MemberName | null>(null);
 
   // join
   let code = $state('');
-  let joinName = $state('');
 
   async function submitCreate(e: SubmitEvent) {
     e.preventDefault();
-    if (busy || !createName.trim() || !name.trim()) return;
+    if (busy || !who || !name.trim()) return;
     busy = true;
     try {
       // On success the household exists, so App unmounts this screen and Home
       // takes over — including showing the invite code.
-      await household.create(name.trim(), currency, createName.trim());
+      await household.create(name.trim(), currency, who);
     } catch (err) {
       toasts.error(err);
     } finally {
@@ -34,10 +34,10 @@
 
   async function submitJoin(e: SubmitEvent) {
     e.preventDefault();
-    if (busy || !joinName.trim() || !code.trim()) return;
+    if (busy || !code.trim()) return;
     busy = true;
     try {
-      await household.join(code.trim().toLowerCase(), joinName.trim());
+      await household.join(code.trim().toLowerCase());
       toasts.ok('已加入账本');
     } catch (err) {
       toasts.error(err);
@@ -85,12 +85,17 @@
         <span class="note">v1 是单币种账本，创建后不再修改。</span>
       </label>
 
-      <label class="field">
-        <span class="label">我的昵称</span>
-        <input class="input" bind:value={createName} maxlength="20" placeholder="对方看到的名字" />
-      </label>
+      <div class="field">
+        <span class="label">我是</span>
+        <div class="segmented">
+          {#each MEMBER_NAMES as n (n)}
+            <button type="button" aria-pressed={who === n} onclick={() => (who = n)}>{n}</button>
+          {/each}
+        </div>
+        <span class="note">对方加入时会自动成为另一个。</span>
+      </div>
 
-      <button class="btn btn-primary btn-block" disabled={busy || !createName.trim()}>
+      <button class="btn btn-primary btn-block" disabled={busy || !who}>
         {busy ? '创建中…' : '创建'}
       </button>
     </form>
@@ -109,12 +114,11 @@
         />
       </label>
 
-      <label class="field">
-        <span class="label">我的昵称</span>
-        <input class="input" bind:value={joinName} maxlength="20" placeholder="对方看到的名字" />
-      </label>
+      <p class="note join-note">
+        名字不用填 —— 账本里剩下的那个就是你（{MEMBER_NAMES.join(' 或 ')}）。
+      </p>
 
-      <button class="btn btn-primary btn-block" disabled={busy || !joinName.trim() || !code.trim()}>
+      <button class="btn btn-primary btn-block" disabled={busy || !code.trim()}>
         {busy ? '加入中…' : '加入'}
       </button>
     </form>
@@ -178,6 +182,11 @@
     font-size: 12px;
     color: var(--text-faint);
     margin-top: 6px;
+  }
+
+  .join-note {
+    margin: 0 2px 18px;
+    line-height: 1.6;
   }
 
   .code {

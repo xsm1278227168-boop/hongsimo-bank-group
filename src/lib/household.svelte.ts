@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { session } from './session.svelte';
+import type { MemberName } from './members';
 import type { Category, Household, Member, UUID } from './types';
 
 class HouseholdStore {
@@ -68,7 +69,7 @@ class HouseholdStore {
     this.loaded = false;
   }
 
-  async create(name: string, currency: string, displayName: string) {
+  async create(name: string, currency: string, displayName: MemberName) {
     const { error } = await supabase.rpc('create_household', {
       p_name: name,
       p_currency: currency,
@@ -78,26 +79,11 @@ class HouseholdStore {
     await this.load();
   }
 
-  async join(code: string, displayName: string) {
-    const { error } = await supabase.rpc('join_household', {
-      p_code: code,
-      p_display_name: displayName
-    });
+  /** No name to pass: the database assigns whichever of the pair is still free. */
+  async join(code: string) {
+    const { error } = await supabase.rpc('join_household', { p_code: code });
     if (error) throw error;
     await this.load();
-  }
-
-  async renameMe(displayName: string) {
-    const uid = session.userId;
-    if (!uid) return;
-    const { error } = await supabase
-      .from('members')
-      .update({ display_name: displayName })
-      .eq('user_id', uid);
-    if (error) throw error;
-    this.members = this.members.map((m) =>
-      m.user_id === uid ? { ...m, display_name: displayName } : m
-    );
   }
 
   async addCategory(name: string) {

@@ -22,16 +22,22 @@ create table if not exists households (
   created_at  timestamptz not null default now()
 );
 
+-- 两位成员的名字是固定的：Zod（男）和 Sylvia（女）。
+-- 想换名字：改下面这一条 check 约束，并同步改 src/lib/members.ts 里的常量。
 create table if not exists members (
   household_id uuid not null references households(id) on delete cascade,
   user_id      uuid not null references auth.users(id) on delete cascade,
   display_name text not null,
   joined_at    timestamptz not null default now(),
-  primary key (household_id, user_id)
+  primary key (household_id, user_id),
+  constraint members_fixed_names check (display_name in ('Zod', 'Sylvia'))
 );
 
 -- v1：一个用户只能属于一个 household
 create unique index if not exists members_one_household_per_user on members(user_id);
+
+-- 同一个账本里两个人不可能同名
+create unique index if not exists members_unique_name on members(household_id, display_name);
 
 create table if not exists categories (
   id           uuid primary key default gen_random_uuid(),
@@ -91,31 +97,12 @@ drop policy if exists members_select on members;
 create policy members_select on members for select to authenticated
   using (is_member(household_id));
 
--- members：改自己的昵称（设置页）。RLS 只能限制"哪一行"，限制"哪一列"靠下面的
--- 触发器，两者合起来才等于"仅限自己、且只能改 display_name"。
+-- members：没有 update 策略。名字是固定的两个，改不了，所以也不需要给
+-- 客户端开一条写路径。（早期版本为了"改昵称"开过 update 策略 + 列级触发器，
+-- 名字固定之后两者都是死代码，一并删掉。）
 drop policy if exists members_update_self on members;
-create policy members_update_self on members for update to authenticated
-  using (user_id = auth.uid())
-  with check (user_id = auth.uid());
-
-create or replace function members_display_name_only()
-returns trigger language plpgsql set search_path = public as $$
-begin
-  if new.household_id is distinct from old.household_id
-     or new.user_id is distinct from old.user_id
-     or new.joined_at is distinct from old.joined_at then
-    raise exception 'only display_name may be updated';
-  end if;
-  if new.display_name is null or btrim(new.display_name) = '' then
-    raise exception 'display_name must not be empty';
-  end if;
-  return new;
-end $$;
-
 drop trigger if exists members_display_name_only_trg on members;
-create trigger members_display_name_only_trg
-  before update on members
-  for each row execute function members_display_name_only();
+drop function if exists members_display_name_only();
 
 -- categories：成员可读、可增、可改（改名/归档/排序）
 drop policy if exists categories_select on categories;
@@ -155,6 +142,9 @@ returns uuid language plpgsql security definer set search_path = public as $$
 declare v_hid uuid;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
+  if p_display_name not in ('Zod', 'Sylvia') then
+    raise exception 'invalid member name';
+  end if;
   if exists (select 1 from members where user_id = auth.uid()) then
     raise exception 'already in a household';
   end if;
@@ -166,10 +156,12 @@ begin
   return v_hid;
 end $$;
 
--- 用邀请码加入；上限 2 人
-create or replace function join_household(p_code text, p_display_name text)
+-- 用邀请码加入；上限 2 人。
+-- 名字不用填：账本里剩下的那个就是你。加入者本来也读不到对方已经占了哪个名字
+-- （RLS 挡着），让数据库来分配既省一步输入，也不会撞名。
+create or replace function join_household(p_code text)
 returns uuid language plpgsql security definer set search_path = public as $$
-declare v_hid uuid; v_cnt int;
+declare v_hid uuid; v_cnt int; v_taken text; v_name text;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   if exists (select 1 from members where user_id = auth.uid()) then
@@ -179,9 +171,17 @@ begin
   if v_hid is null then raise exception 'invalid invite code'; end if;
   select count(*) into v_cnt from members where household_id = v_hid;
   if v_cnt >= 2 then raise exception 'household is full'; end if;
-  insert into members(household_id, user_id, display_name) values (v_hid, auth.uid(), p_display_name);
+
+  select display_name into v_taken from members where household_id = v_hid limit 1;
+  v_name := case when v_taken = 'Zod' then 'Sylvia' else 'Zod' end;
+
+  insert into members(household_id, user_id, display_name) values (v_hid, auth.uid(), v_name);
   return v_hid;
 end $$;
+
+-- 旧的两参数版本会和上面的单参数版本共存（Postgres 允许重载），留着会让
+-- PostgREST 无法决定调用哪一个，直接删掉。
+drop function if exists join_household(text, text);
 
 -- 冲销：复制原记录、direction = -1
 create or replace function reverse_transaction(p_id uuid)

@@ -61,18 +61,37 @@ begin
   -- 建 household：A 创建，B 用邀请码加入
   ---------------------------------------------------------------------------
   perform pg_temp.act_as(v_a);
-  v_hid := create_household('验证用账本', 'CNY', '甲');
+
+  -- 名字只能是固定的那两个
+  v_err := null;
+  begin
+    perform create_household('验证用账本', 'CNY', '张三');
+  exception when others then
+    v_err := sqlerrm;
+  end;
+  if v_err is null or v_err not like '%invalid member name%' then
+    raise exception '建账失败: 自定义名字本应被拒绝，实际 %', coalesce(v_err, '(没有抛出异常)');
+  end if;
+
+  v_hid := create_household('验证用账本', 'CNY', 'Zod');
 
   select invite_code into v_code from households where id = v_hid;
   if v_code is null then
     raise exception '建账失败: A 读不到自己 household 的邀请码（households_select 策略有问题？）';
   end if;
 
+  -- 加入时不填名字：数据库把剩下的那个分配给他
   perform pg_temp.act_as(v_b);
-  perform join_household(v_code, '乙');
+  perform join_household(v_code);
 
   if (select count(*) from members where household_id = v_hid) <> 2 then
     raise exception '建账失败: household 应该有 2 个成员';
+  end if;
+  if (select display_name from members where household_id = v_hid and user_id = v_a) <> 'Zod' then
+    raise exception '建账失败: 创建者应该是 Zod';
+  end if;
+  if (select display_name from members where household_id = v_hid and user_id = v_b) <> 'Sylvia' then
+    raise exception '建账失败: 加入者应该被自动分配为 Sylvia';
   end if;
 
   ---------------------------------------------------------------------------
@@ -240,7 +259,7 @@ begin
     perform pg_temp.act_as(v_c);
     v_err := null;
     begin
-      perform join_household(v_code, '丙');
+      perform join_household(v_code);
     exception when others then
       v_err := sqlerrm;
     end;
@@ -251,7 +270,7 @@ begin
 
   perform set_config('role', 'none', true);
   raise notice '';
-  raise notice '  ✅ 验证通过 —— 第 7 节 7 个场景 + 4 项附加检查全部符合预期';
+  raise notice '  ✅ 验证通过 —— 第 7 节 7 个场景 + 固定名字 + 4 项附加检查全部符合预期';
   raise notice '';
 end $$;
 

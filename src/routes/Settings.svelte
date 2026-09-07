@@ -7,10 +7,8 @@
   import Confirm from '../components/Confirm.svelte';
   import InstallPrompt from '../components/InstallPrompt.svelte';
   import { install } from '../lib/install.svelte';
+  import { MEMBER_NAMES } from '../lib/members';
   import type { Category } from '../lib/types';
-
-  let nickname = $state(household.me?.display_name ?? '');
-  let savingName = $state(false);
 
   let newCategory = $state('');
   let addingCategory = $state(false);
@@ -22,24 +20,8 @@
   let exporting = $state(false);
   let confirmSignOut = $state(false);
 
-  const nameChanged = $derived(
-    nickname.trim().length > 0 && nickname.trim() !== household.me?.display_name
-  );
   const archived = $derived(household.categories.filter((c) => c.archived));
   const alone = $derived(household.members.length < 2);
-
-  async function saveName() {
-    if (!nameChanged || savingName) return;
-    savingName = true;
-    try {
-      await household.renameMe(nickname.trim());
-      toasts.ok('昵称已更新');
-    } catch (err) {
-      toasts.error(err);
-    } finally {
-      savingName = false;
-    }
-  }
 
   async function addCategory() {
     const name = newCategory.trim();
@@ -110,28 +92,19 @@
     <p>{session.user?.email}</p>
   </header>
 
-  <!-- 昵称 -->
-  <span class="section-title">我的昵称</span>
-  <div class="card">
-    <div class="inline">
-      <input class="input" bind:value={nickname} maxlength="20" aria-label="我的昵称" />
-      <button class="btn" onclick={saveName} disabled={!nameChanged || savingName}>
-        {savingName ? '保存中' : '保存'}
-      </button>
-    </div>
-  </div>
-
   <!-- 账本 -->
   <span class="section-title">账本</span>
   <div class="card">
     <dl>
       <div><dt>名称</dt><dd>{household.household?.name}</dd></div>
       <div><dt>币种</dt><dd>{household.currency}</dd></div>
+      <div><dt>我是</dt><dd>{household.me?.display_name ?? '—'}</dd></div>
       <div>
-        <dt>成员</dt>
-        <dd>{household.members.map((m) => m.display_name).join(' · ')}</dd>
+        <dt>对方</dt>
+        <dd>{household.partner?.display_name ?? '还没加入'}</dd>
       </div>
     </dl>
+    <p class="hint">名字固定为 {MEMBER_NAMES.join(' 和 ')}，不能修改。</p>
     {#if alone && household.household}
       <div class="invite">
         <InviteCode code={household.household.invite_code} />
