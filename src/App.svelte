@@ -1,19 +1,40 @@
 <script lang="ts">
   import { session } from './lib/session.svelte';
+  import { household } from './lib/household.svelte';
   import { router } from './lib/router.svelte';
+  import { toasts } from './lib/toast.svelte';
   import Login from './routes/Login.svelte';
+  import Onboarding from './routes/Onboarding.svelte';
   import Toast from './components/Toast.svelte';
 
   session.init();
 
-  // Route guard. Everything except /login requires a session.
+  // Load (or clear) the household whenever the signed-in user changes.
+  let loadedFor: string | null = null;
+  $effect(() => {
+    const uid = session.userId;
+    if (uid === loadedFor) return;
+    loadedFor = uid;
+    household.reset();
+    if (!uid) return;
+    household.load().catch((err) => {
+      household.loaded = true;
+      toasts.error(err);
+    });
+  });
+
+  // Keep the URL honest about which gate the user is behind. What actually
+  // renders is driven by state, so a stale hash can never show the wrong page.
   $effect(() => {
     if (!session.ready) return;
     if (!session.user) {
-      if (router.path !== '/login') router.go('/login', true);
-    } else if (router.path === '/login') {
-      router.go('/', true);
+      router.go('/login', true);
+      return;
     }
+    if (router.path === '/login') router.go('/', true);
+    if (!household.loaded) return;
+    if (!household.household) router.go('/onboarding', true);
+    else if (router.path === '/onboarding') router.go('/', true);
   });
 </script>
 
@@ -21,10 +42,16 @@
   <div class="splash">载入中…</div>
 {:else if !session.user}
   <Login />
+{:else if !household.loaded}
+  <div class="splash">载入账本…</div>
+{:else if !household.household}
+  <Onboarding />
 {:else}
   <main class="page">
-    <h1>已登录</h1>
-    <p class="muted">{session.user.email}</p>
+    <h1>{household.household.name}</h1>
+    <p class="muted">
+      {household.members.map((m) => m.display_name).join(' · ')} · {household.currency}
+    </p>
     <button class="btn" onclick={() => session.signOut()}>退出登录</button>
   </main>
 {/if}
