@@ -164,6 +164,17 @@ class LedgerStore {
     await this.refreshNet();
   }
 
+  /**
+   * "Edit" in an append-only ledger: cancel the old record, then write the new
+   * one. The reversal is deliberately deferred to submit time — reversing when
+   * the edit sheet opens would leave a dangling reversal every time the user
+   * changes their mind and closes it.
+   */
+  async replace(id: UUID, input: NewTx) {
+    await this.reverse(id);
+    await this.add(input);
+  }
+
   async settle() {
     const hid = household.household?.id;
     if (!hid) throw new Error('no household');

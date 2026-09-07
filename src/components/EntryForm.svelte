@@ -20,11 +20,14 @@
     initial,
     submitText = '记一笔',
     autofocus = false,
+    replaces,
     onDone
   }: {
     initial?: EntryInit;
     submitText?: string;
     autofocus?: boolean;
+    /** id of the record this entry supersedes: reversed, then re-entered. */
+    replaces?: UUID;
     onDone?: () => void;
   } = $props();
 
@@ -126,16 +129,18 @@
     if (!canSubmit || amount === null) return;
     busy = true;
     try {
-      await ledger.add({
+      const payload = {
         occurred_on: occurredOn,
         amount,
         payer_id: payerId,
         payer_share: payerShare,
         category,
         note: note.trim() || null
-      });
+      };
+      if (replaces) await ledger.replace(replaces, payload);
+      else await ledger.add(payload);
       rememberCategory(category);
-      toasts.ok('已记一笔');
+      toasts.ok(replaces ? '已修改（原记录已冲销）' : '已记一笔');
       // Keep payer / split / category: the next entry is usually similar.
       amountText = '';
       note = '';
