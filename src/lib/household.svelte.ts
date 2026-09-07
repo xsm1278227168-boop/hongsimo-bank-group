@@ -100,6 +100,53 @@ class HouseholdStore {
     );
   }
 
+  async addCategory(name: string) {
+    const hid = this.household?.id;
+    if (!hid) return;
+    const maxOrder = this.categories.reduce((m, c) => Math.max(m, c.sort_order), 0);
+    const { error } = await supabase
+      .from('categories')
+      .insert({ household_id: hid, name, sort_order: maxOrder + 1 });
+    if (error) throw error;
+    await this.reloadCategories();
+  }
+
+  async renameCategory(id: UUID, name: string) {
+    const { error } = await supabase.from('categories').update({ name }).eq('id', id);
+    if (error) throw error;
+    await this.reloadCategories();
+  }
+
+  async setArchived(id: UUID, archived: boolean) {
+    const { error } = await supabase.from('categories').update({ archived }).eq('id', id);
+    if (error) throw error;
+    await this.reloadCategories();
+  }
+
+  /**
+   * Reorder by swapping sort_order with the neighbour. Existing transactions
+   * store the category *name*, so reordering never touches historical records.
+   */
+  async moveCategory(id: UUID, delta: -1 | 1) {
+    const list = this.activeCategories;
+    const i = list.findIndex((c) => c.id === id);
+    const j = i + delta;
+    if (i === -1 || j < 0 || j >= list.length) return;
+
+    const a = list[i];
+    const b = list[j];
+    // Equal sort_order values would make the swap a no-op; renumber instead.
+    const [aOrder, bOrder] = a.sort_order === b.sort_order ? [j + 1, i + 1] : [b.sort_order, a.sort_order];
+
+    const results = await Promise.all([
+      supabase.from('categories').update({ sort_order: aOrder }).eq('id', a.id),
+      supabase.from('categories').update({ sort_order: bOrder }).eq('id', b.id)
+    ]);
+    const err = results.find((r) => r.error)?.error;
+    if (err) throw err;
+    await this.reloadCategories();
+  }
+
   async reloadCategories() {
     const { data, error } = await supabase
       .from('categories')
