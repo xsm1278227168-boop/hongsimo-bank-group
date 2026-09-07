@@ -74,12 +74,19 @@
 {:else if tx.pending}
   <p class="note">这条记录还在保存中。</p>
 {:else}
-  <div class="actions">
+  <!-- 结算只能冲销：它记录的是"钱确实付过了"，改成一笔支出没有意义。 -->
+  <div class="actions" class:single={isSettlement}>
     <button class="btn btn-danger" onclick={onreverse}>冲销</button>
-    <button class="btn" onclick={onedit}>修改</button>
+    {#if !isSettlement}
+      <button class="btn" onclick={onedit}>修改</button>
+    {/if}
   </div>
   <p class="note">
-    账本只能追加，不能改写。「修改」= 冲销这条 + 新增一条；两条都会留在流水里。
+    {#if isSettlement}
+      账本只能追加，不能改写。结算记录只能冲销。
+    {:else}
+      账本只能追加，不能改写。「修改」= 冲销这条 + 新增一条；两条都会留在流水里。
+    {/if}
   </p>
 {/if}
 
@@ -157,6 +164,10 @@
     grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-top: 18px;
+  }
+
+  .actions.single {
+    grid-template-columns: 1fr;
   }
 
   .note {

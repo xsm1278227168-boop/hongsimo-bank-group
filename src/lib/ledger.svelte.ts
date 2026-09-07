@@ -168,14 +168,27 @@ class LedgerStore {
   }
 
   /**
-   * "Edit" in an append-only ledger: cancel the old record, then write the new
-   * one. The reversal is deliberately deferred to submit time — reversing when
-   * the edit sheet opens would leave a dangling reversal every time the user
-   * changes their mind and closes it.
+   * "Edit" in an append-only ledger: cancel the old record and write the new
+   * one. Both happen inside replace_transaction so they cannot come apart — a
+   * client-side reverse-then-insert leaves a voided record with no replacement
+   * if the second call fails, and an append-only ledger has no way to undo it.
+   *
+   * The reversal is deferred to submit time rather than done when the edit
+   * sheet opens, so abandoning an edit leaves the ledger untouched.
    */
   async replace(id: UUID, input: NewTx) {
-    await this.reverse(id);
-    await this.add(input);
+    const { error } = await supabase.rpc('replace_transaction', {
+      p_id: id,
+      p_occurred_on: input.occurred_on,
+      p_amount: input.amount,
+      p_payer_id: input.payer_id,
+      p_payer_share: input.payer_share,
+      p_category: input.category,
+      p_note: input.note
+    });
+    if (error) throw error;
+    // Two rows appeared; pull the list rather than reconstructing them here.
+    await this.refresh();
   }
 
   async settle() {

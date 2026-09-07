@@ -34,7 +34,9 @@ declare
   v_hid       uuid;
   v_code      text;
   v_t1        uuid;   -- 步骤 1 的记录
+  v_t2        uuid;   -- 步骤 2 的记录
   v_t3        uuid;   -- 步骤 3 产生的冲销记录
+  v_t8        uuid;   -- 附加 8b 里 replace 出来的新记录
   v_creditor  uuid;
   v_debtor    uuid;
   v_amount    numeric;
@@ -115,7 +117,8 @@ begin
   perform pg_temp.act_as(v_b);
   insert into transactions(household_id, type, occurred_on, amount, currency,
                            payer_id, payer_share, category, note)
-  values (v_hid, 'expense', current_date, 30, 'CNY', v_b, 0, '日用', '步骤2 B垫付30');
+  values (v_hid, 'expense', current_date, 30, 'CNY', v_b, 0, '日用', '步骤2 B垫付30')
+  returning id into v_t2;
 
   select creditor, debtor, amount into v_creditor, v_debtor, v_amount from household_net(v_hid);
   if v_creditor <> v_a or v_debtor <> v_b or v_amount <> 20.00 then
@@ -211,6 +214,64 @@ begin
   end if;
 
   ---------------------------------------------------------------------------
+  -- 附加 8b：replace_transaction —— 冲销 + 新增必须原子完成
+  ---------------------------------------------------------------------------
+  perform pg_temp.act_as(v_b);
+  v_t8 := replace_transaction(v_t2, current_date, 80, v_b, 0, '日用', '改成 80');
+  if (select count(*) from transactions where reverses_id = v_t2) <> 1 then
+    raise exception '附加 8b 失败: 原记录应该被冲销一次';
+  end if;
+  if (select amount from transactions where id = v_t8) <> 80.00 then
+    raise exception '附加 8b 失败: 新记录金额应为 80.00';
+  end if;
+  -- 步骤 2 的 30 被抵消，换成 80：B 的应收 30 → 80，A 仍是 30（步骤 4 的结算）
+  select creditor, debtor, amount into v_creditor, v_debtor, v_amount from household_net(v_hid);
+  if v_creditor <> v_b or v_debtor <> v_a or v_amount <> 50.00 then
+    raise exception '附加 8b 失败: 期望 A 欠 B 50.00，实际 creditor=% debtor=% amount=%',
+      v_creditor, v_debtor, v_amount;
+  end if;
+
+  -- 失败时必须整体回滚，不能只留下冲销记录
+  v_err := null;
+  begin
+    perform replace_transaction(v_t8, current_date, -5, v_b, 0, '日用', '非法金额');
+  exception when others then
+    v_err := sqlerrm;
+  end;
+  if v_err is null or v_err not like '%amount must be positive%' then
+    raise exception '附加 8b 失败: 期望 amount must be positive，实际 %', coalesce(v_err, '(没有抛出异常)');
+  end if;
+  if exists (select 1 from transactions where reverses_id = v_t8) then
+    raise exception '附加 8b 失败: 失败的 replace 不应该留下冲销记录（原子性被破坏）';
+  end if;
+
+  -- 结算记录不能改，只能冲销
+  v_err := null;
+  begin
+    perform replace_transaction(
+      (select id from transactions where household_id = v_hid and type = 'settlement' limit 1),
+      current_date, 10, v_a, 0.5, null, null);
+  exception when others then
+    v_err := sqlerrm;
+  end;
+  if v_err is null or v_err not like '%only expenses can be edited%' then
+    raise exception '附加 8b 失败: 期望 only expenses can be edited，实际 %', coalesce(v_err, '(没有抛出异常)');
+  end if;
+
+  -- 冲销 + 新增之后，再冲销原记录应当报 already reversed
+  v_err := null;
+  begin
+    perform reverse_transaction(v_t2);
+  exception when others then
+    v_err := sqlerrm;
+  end;
+  if v_err is null or v_err not like '%already reversed%' then
+    raise exception '附加 8b 失败: 被 replace 过的记录应当已冲销，实际 %', coalesce(v_err, '(没有抛出异常)');
+  end if;
+
+  perform pg_temp.act_as(v_a);
+
+  ---------------------------------------------------------------------------
   -- 附加 9：insert 策略挡住伪造的 direction / type / payer / created_by
   ---------------------------------------------------------------------------
   v_err := null;
@@ -270,7 +331,7 @@ begin
 
   perform set_config('role', 'none', true);
   raise notice '';
-  raise notice '  ✅ 验证通过 —— 第 7 节 7 个场景 + 固定名字 + 4 项附加检查全部符合预期';
+  raise notice '  ✅ 验证通过 —— 第 7 节 7 个场景 + 固定名字 + 全部附加检查符合预期';
   raise notice '';
 end $$;
 

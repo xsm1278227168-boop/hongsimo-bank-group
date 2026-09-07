@@ -180,6 +180,7 @@ npm run preview   # 预览 dist/
 | 6 | 再次冲销步骤 1 | `already reversed` |
 | 7 | 冲销那条冲销记录 | `cannot reverse a reversal` |
 | 8 | `UPDATE` / `DELETE` transactions | 影响 0 行 |
+| 8b | `replace_transaction` | 冲销 + 新增原子完成；失败时不留下孤立的冲销记录；结算记录拒绝修改 |
 | 9 | 伪造 direction / type / created_by / currency | 全部被 RLS 拒绝 |
 | 10 | 第三人加入满员 household | `household is full` |
 | 11 | 固定名字 | 自定义名字被拒；创建者 = `Zod`，加入者自动 = `Sylvia` |
@@ -271,7 +272,11 @@ supabase/
 
 **hash 路由。** GitHub Pages 没有 rewrite，hash 路由不需要 `404.html` 兜底。它同时决定了登录必须走 PKCE：implicit 流程会把 session 放在 URL fragment 里，正好和路由打架。
 
-**「修改」推迟到提交时才冲销。** Brief 原本写的是点「修改」先调 `reverse_transaction`、再打开预填表单。那样一来，用户误点「修改」又关掉，原记录就已经被冲销了，留下一条没有替代品的作废记录。现在改成提交时才 `reverse` + `insert`（`ledger.replace`）：成功路径完全一样，只有「点开又放弃」这种情况不会再弄脏账本。抽屉里也写明了「提交后会先冲销原记录」。
+**「修改」是一个 RPC，不是两次请求。** Brief 原本写的是点「修改」先调 `reverse_transaction`、再打开预填表单。那样一来，用户误点「修改」又关掉，原记录就已经被冲销了，留下一条没有替代品的作废记录。
+
+现在改成两点：一是推迟到提交时才动账本，「点开又放弃」不会弄脏任何东西；二是冲销和新增放在同一个 `replace_transaction` 函数里。plpgsql 函数跑在一个事务里，异常即整体回滚 —— 客户端分两次请求做不到这一点，第二次失败就会留下一条已作废、又补不回来的记录，而账本是 append-only。
+
+该函数是 `security definer`，绕过了 RLS，所以 `transactions_insert` 策略里的每一项检查（付款人是成员、币种一致、金额为正、比例合法）都在函数里原样重做了一遍，否则它就成了绕过策略的后门。它也只接受支出：结算记录只能冲销，UI 里对结算不显示「修改」。
 
 **名字由数据库分配，不由加入者填。** 加入账本的人受 RLS 限制，加入之前根本读不到对方占了哪个名字，所以让他自己填必然会撞名。`join_household` 因此不收名字参数，直接把剩下的那个分配给他。也因为名字固定，`members` 表不需要任何 update 策略。
 

@@ -203,6 +203,62 @@ begin
   return v_new;
 end $$;
 
+-- 「修改」= 冲销原记录 + 新增一条改好的。
+--
+-- 这两步必须一起成功或一起失败。客户端分两次请求做不到：第二步失败（网络断了、
+-- 校验没过）就会留下一条已经作废、却没有替代品的记录，而账本又是 append-only，
+-- 补不回去。plpgsql 函数天然跑在一个事务里，异常即整体回滚。
+--
+-- 只允许改支出。结算记录是「钱确实付过了」，要么冲销要么留着，改成一笔支出没有
+-- 意义，而且 payer_share 一旦非 0 就会撞上 settlement_share 约束。
+create or replace function replace_transaction(
+  p_id          uuid,
+  p_occurred_on date,
+  p_amount      numeric,
+  p_payer_id    uuid,
+  p_payer_share numeric,
+  p_category    text,
+  p_note        text
+)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_orig transactions%rowtype; v_cur text; v_new uuid;
+begin
+  select * into v_orig from transactions where id = p_id;
+  if v_orig.id is null then raise exception 'not found'; end if;
+  if not is_member(v_orig.household_id) then raise exception 'forbidden'; end if;
+  if v_orig.direction = -1 then raise exception 'cannot reverse a reversal'; end if;
+  if v_orig.type <> 'expense' then raise exception 'only expenses can be edited'; end if;
+  if exists (select 1 from transactions where reverses_id = p_id) then
+    raise exception 'already reversed';
+  end if;
+
+  -- security definer 绕过了 RLS，所以 transactions_insert 策略里的检查必须在这里
+  -- 原样重做一遍，否则这个函数就成了绕过策略的后门。
+  if p_amount is null or p_amount <= 0 then raise exception 'amount must be positive'; end if;
+  if p_payer_share is null or p_payer_share < 0 or p_payer_share > 1 then
+    raise exception 'invalid payer_share';
+  end if;
+  if not exists (select 1 from members m
+                 where m.household_id = v_orig.household_id and m.user_id = p_payer_id) then
+    raise exception 'payer is not a member';
+  end if;
+
+  select currency into v_cur from households where id = v_orig.household_id;
+
+  insert into transactions(household_id, type, occurred_on, amount, currency, payer_id, payer_share,
+                           category, note, direction, reverses_id, created_by)
+  values (v_orig.household_id, v_orig.type, current_date, v_orig.amount, v_orig.currency, v_orig.payer_id,
+          v_orig.payer_share, v_orig.category, coalesce('冲销: ' || v_orig.note, '冲销'), -1, p_id, auth.uid());
+
+  insert into transactions(household_id, type, occurred_on, amount, currency, payer_id, payer_share,
+                           category, note, created_by)
+  values (v_orig.household_id, 'expense', coalesce(p_occurred_on, current_date), p_amount, v_cur,
+          p_payer_id, p_payer_share, p_category, p_note, auth.uid())
+  returning id into v_new;
+
+  return v_new;
+end $$;
+
 -- 每位成员的应收合计
 create or replace view member_receivables with (security_invoker = true) as
 select
