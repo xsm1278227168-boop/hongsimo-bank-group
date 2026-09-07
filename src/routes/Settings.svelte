@@ -5,6 +5,8 @@
   import { exportCsv, triggerDownload } from '../lib/csv';
   import InviteCode from '../components/InviteCode.svelte';
   import Confirm from '../components/Confirm.svelte';
+  import InstallPrompt from '../components/InstallPrompt.svelte';
+  import { install } from '../lib/install.svelte';
   import type { Category } from '../lib/types';
 
   let nickname = $state(household.me?.display_name ?? '');
@@ -225,6 +227,12 @@
       已有记录保存的是类别名称，改名或归档都不会改动历史记录。
     </p>
   </div>
+
+  <!-- 安装 -->
+  {#if install.available}
+    <span class="section-title">安装</span>
+    <InstallPrompt />
+  {/if}
 
   <!-- 数据 -->
   <span class="section-title">数据</span>

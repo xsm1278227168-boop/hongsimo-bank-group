@@ -9,6 +9,7 @@
   import EntryForm from '../components/EntryForm.svelte';
   import TxRow from '../components/TxRow.svelte';
   import Confirm from '../components/Confirm.svelte';
+  import InstallPrompt from '../components/InstallPrompt.svelte';
 
   let confirmSettle = $state(false);
   let settling = $state(false);
@@ -46,6 +47,8 @@
   </BalanceCard>
 
   <EntryForm autofocus />
+
+  <InstallPrompt dismissible />
 
   <div class="recent-head">
     <span class="section-title">最近</span>

@@ -17,16 +17,41 @@ export default defineConfig({
         name: '洪撕膜之银行集团',
         short_name: '洪撕膜银行',
         description: '两人共享记账',
-        theme_color: '#111827',
-        background_color: '#ffffff',
+        // Matches --bg in the light palette so the standalone chrome and the
+        // launch splash blend into the page instead of framing it.
+        theme_color: '#f5f5f6',
+        background_color: '#f5f5f6',
         display: 'standalone',
         orientation: 'portrait',
         start_url: `/${REPO_NAME}/`,
         scope: `/${REPO_NAME}/`,
+        lang: 'zh-CN',
+        categories: ['finance', 'productivity'],
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+        ],
+        // Long-press the home-screen icon to jump straight to a page.
+        shortcuts: [
+          {
+            name: '记一笔',
+            short_name: '记一笔',
+            url: `/${REPO_NAME}/#/`,
+            icons: [{ src: 'icon-192.png', sizes: '192x192' }]
+          },
+          {
+            name: '流水',
+            short_name: '流水',
+            url: `/${REPO_NAME}/#/ledger`,
+            icons: [{ src: 'icon-192.png', sizes: '192x192' }]
+          },
+          {
+            name: '月度汇总',
+            short_name: '汇总',
+            url: `/${REPO_NAME}/#/summary`,
+            icons: [{ src: 'icon-192.png', sizes: '192x192' }]
+          }
         ]
       },
       workbox: {
