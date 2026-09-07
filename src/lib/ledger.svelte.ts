@@ -52,6 +52,8 @@ class LedgerStore {
   );
 
   private channel: RealtimeChannel | null = null;
+  private watchdog: ReturnType<typeof setTimeout> | null = null;
+  private warnedOffline = false;
 
   async load() {
     const { data, error } = await supabase
@@ -188,7 +190,6 @@ class LedgerStore {
   /** Live updates for the other phone's entries. INSERT is the only event the ledger can produce. */
   subscribe(householdId: UUID) {
     this.unsubscribe();
-    let warned = false;
     this.channel = supabase
       .channel(`tx:${householdId}`)
       .on(
@@ -205,17 +206,28 @@ class LedgerStore {
         }
       )
       .subscribe((status) => {
-        // A dead channel would otherwise be invisible: entries from the other
-        // phone would simply stop arriving until the app is reopened.
-        if (status === 'SUBSCRIBED') warned = false;
-        else if (!warned && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
-          warned = true;
-          toasts.error('实时同步未连接，回到前台时会重新拉取。');
-        }
+        if (status === 'SUBSCRIBED') this.warnedOffline = false;
       });
+
+    // A dead channel would otherwise be invisible: entries from the other phone
+    // would simply stop arriving. The status callback above is not enough — it
+    // is never invoked when the websocket itself fails to open, which is the
+    // likeliest cause (Realtime not enabled on the project, or a network that
+    // blocks ws). So check the channel's own state instead of waiting for a
+    // status that may never arrive.
+    this.watchdog = setTimeout(() => {
+      if (this.channel && String(this.channel.state) !== 'joined' && !this.warnedOffline) {
+        this.warnedOffline = true;
+        toasts.error('实时同步未连接，对方的新记录要回到前台才会刷新。');
+      }
+    }, 12000);
   }
 
   unsubscribe() {
+    if (this.watchdog) {
+      clearTimeout(this.watchdog);
+      this.watchdog = null;
+    }
     if (this.channel) {
       void supabase.removeChannel(this.channel);
       this.channel = null;

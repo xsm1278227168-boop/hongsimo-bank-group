@@ -2,13 +2,11 @@
   import { household } from '../lib/household.svelte';
   import { session } from '../lib/session.svelte';
   import { toasts } from '../lib/toast.svelte';
-  import InviteCode from '../components/InviteCode.svelte';
 
   const CURRENCIES = ['CNY', 'HKD', 'TWD', 'USD', 'EUR', 'GBP', 'JPY', 'SGD', 'AUD', 'CAD'];
 
   let mode = $state<'create' | 'join'>('create');
   let busy = $state(false);
-  let justCreated = $state(false);
 
   // create
   let name = $state('我们的账本');
@@ -24,8 +22,9 @@
     if (busy || !createName.trim() || !name.trim()) return;
     busy = true;
     try {
+      // On success the household exists, so App unmounts this screen and Home
+      // takes over — including showing the invite code.
       await household.create(name.trim(), currency, createName.trim());
-      justCreated = true;
     } catch (err) {
       toasts.error(err);
     } finally {
@@ -49,95 +48,79 @@
 </script>
 
 <main class="wrap">
-  {#if justCreated && household.household}
-    <header>
-      <h1>账本已创建</h1>
-      <p class="muted">把邀请码发给对方，让 TA 加入。</p>
-    </header>
+  <header>
+    <h1>洪撕膜之银行集团</h1>
+    <p class="muted">{session.user?.email}</p>
+  </header>
 
-    <div class="card">
-      <InviteCode code={household.household.invite_code} />
-    </div>
+  <div class="tabs" role="tablist">
+    <button
+      role="tab"
+      aria-selected={mode === 'create'}
+      class="tab"
+      onclick={() => (mode = 'create')}>创建账本</button
+    >
+    <button
+      role="tab"
+      aria-selected={mode === 'join'}
+      class="tab"
+      onclick={() => (mode = 'join')}>加入账本</button
+    >
+  </div>
 
-    <button class="btn btn-primary btn-block" onclick={() => (justCreated = false)}>
-      进入账本
-    </button>
-    <p class="foot muted">邀请码之后也能在「设置」里找到。</p>
+  {#if mode === 'create'}
+    <form class="card" onsubmit={submitCreate}>
+      <label class="field">
+        <span class="label">账本名称</span>
+        <input class="input" bind:value={name} maxlength="40" />
+      </label>
+
+      <label class="field">
+        <span class="label">币种</span>
+        <select class="input" bind:value={currency}>
+          {#each CURRENCIES as c (c)}
+            <option value={c}>{c}</option>
+          {/each}
+        </select>
+        <span class="note">v1 是单币种账本，创建后不再修改。</span>
+      </label>
+
+      <label class="field">
+        <span class="label">我的昵称</span>
+        <input class="input" bind:value={createName} maxlength="20" placeholder="对方看到的名字" />
+      </label>
+
+      <button class="btn btn-primary btn-block" disabled={busy || !createName.trim()}>
+        {busy ? '创建中…' : '创建'}
+      </button>
+    </form>
   {:else}
-    <header>
-      <h1>洪撕膜之银行集团</h1>
-      <p class="muted">{session.user?.email}</p>
-    </header>
+    <form class="card" onsubmit={submitJoin}>
+      <label class="field">
+        <span class="label">邀请码</span>
+        <input
+          class="input code"
+          bind:value={code}
+          maxlength="8"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="8 位字符"
+        />
+      </label>
 
-    <div class="tabs" role="tablist">
-      <button
-        role="tab"
-        aria-selected={mode === 'create'}
-        class="tab"
-        onclick={() => (mode = 'create')}>创建账本</button
-      >
-      <button
-        role="tab"
-        aria-selected={mode === 'join'}
-        class="tab"
-        onclick={() => (mode = 'join')}>加入账本</button
-      >
-    </div>
+      <label class="field">
+        <span class="label">我的昵称</span>
+        <input class="input" bind:value={joinName} maxlength="20" placeholder="对方看到的名字" />
+      </label>
 
-    {#if mode === 'create'}
-      <form class="card" onsubmit={submitCreate}>
-        <label class="field">
-          <span class="label">账本名称</span>
-          <input class="input" bind:value={name} maxlength="40" />
-        </label>
-
-        <label class="field">
-          <span class="label">币种</span>
-          <select class="input" bind:value={currency}>
-            {#each CURRENCIES as c (c)}
-              <option value={c}>{c}</option>
-            {/each}
-          </select>
-          <span class="note">v1 是单币种账本，创建后不再修改。</span>
-        </label>
-
-        <label class="field">
-          <span class="label">我的昵称</span>
-          <input class="input" bind:value={createName} maxlength="20" placeholder="对方看到的名字" />
-        </label>
-
-        <button class="btn btn-primary btn-block" disabled={busy || !createName.trim()}>
-          {busy ? '创建中…' : '创建'}
-        </button>
-      </form>
-    {:else}
-      <form class="card" onsubmit={submitJoin}>
-        <label class="field">
-          <span class="label">邀请码</span>
-          <input
-            class="input code"
-            bind:value={code}
-            maxlength="8"
-            autocapitalize="off"
-            autocorrect="off"
-            spellcheck="false"
-            placeholder="8 位字符"
-          />
-        </label>
-
-        <label class="field">
-          <span class="label">我的昵称</span>
-          <input class="input" bind:value={joinName} maxlength="20" placeholder="对方看到的名字" />
-        </label>
-
-        <button class="btn btn-primary btn-block" disabled={busy || !joinName.trim() || !code.trim()}>
-          {busy ? '加入中…' : '加入'}
-        </button>
-      </form>
-    {/if}
-
-    <button class="link" onclick={() => session.signOut()}>换一个账号登录</button>
+      <button class="btn btn-primary btn-block" disabled={busy || !joinName.trim() || !code.trim()}>
+        {busy ? '加入中…' : '加入'}
+      </button>
+    </form>
   {/if}
+
+  <button class="link" onclick={() => session.signOut()}>换一个账号登录</button>
 </main>
 
 <style>
@@ -210,11 +193,5 @@
     text-decoration: underline;
     padding: 8px;
     align-self: center;
-  }
-
-  .foot {
-    font-size: 13px;
-    text-align: center;
-    margin: 0;
   }
 </style>

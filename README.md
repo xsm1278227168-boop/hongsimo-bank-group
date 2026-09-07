@@ -206,6 +206,14 @@ npm run preview   # 预览 dist/
 
 所以登录页在发送之后还会显示一个**「6 位验证码」**输入框 —— 验证码没有这个跨浏览器的问题。前提是按[第 3 步](#3-配置-auth)在邮件模板里加了 `{{ .Token }}`。
 
+### 提示「实时同步未连接」
+
+说明 WebSocket 没连上，对方新记的账不会自动出现（切回前台时仍会重新拉取）。依次检查：
+
+1. **Database → Replication**（或 Publications）里 `supabase_realtime` 是否包含 `transactions` 表。migration 会自动加，但如果项目是先建后跑的 migration，值得确认一下。
+2. 网络是否屏蔽了 `wss://`（部分公司网络或校园网会）。
+3. 免费层项目长时间无访问会被暂停，打开 Dashboard 唤醒即可。
+
 ### 记错了怎么办
 
 账本是 append-only，改不了也删不掉。在「流水」里点开那条记录：

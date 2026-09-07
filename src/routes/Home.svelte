@@ -10,6 +10,7 @@
   import TxRow from '../components/TxRow.svelte';
   import Confirm from '../components/Confirm.svelte';
   import InstallPrompt from '../components/InstallPrompt.svelte';
+  import InviteCode from '../components/InviteCode.svelte';
 
   let confirmSettle = $state(false);
   let settling = $state(false);
@@ -45,6 +46,16 @@
   {#snippet settleAction()}
     <button class="btn btn-block" onclick={() => (confirmSettle = true)}>结算</button>
   {/snippet}
+
+  <!-- The invite code lives here, not on a post-creation screen: the route
+       guard unmounts onboarding the moment the household exists, and this is
+       the one thing the first user needs before the app is useful at all. -->
+  {#if household.members.length < 2 && household.household}
+    <section class="card invite">
+      <InviteCode code={household.household.invite_code} />
+      <p class="invite-hint">把邀请码发给对方，TA 登录后在「加入账本」里填这个码。</p>
+    </section>
+  {/if}
 
   <EntryForm autofocus />
 
@@ -104,6 +115,13 @@
     font-size: 13px;
     color: var(--text-dim);
     padding: 2px 4px;
+  }
+
+  .invite-hint {
+    margin: 12px 2px 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-faint);
   }
 
   .line {

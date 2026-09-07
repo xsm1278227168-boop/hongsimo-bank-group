@@ -45,9 +45,12 @@ export function plain(v: unknown): string {
   return plainFormatter.format(toNum(v));
 }
 
-/** 'YYYY-MM-DD' → local Date. Avoids the UTC shift of new Date('YYYY-MM-DD'). */
+/**
+ * 'YYYY-MM-DD' → local Date. Avoids the UTC shift of new Date('YYYY-MM-DD').
+ * Slices first so a full timestamp does not silently render as NaN月NaN日.
+ */
 export function parseDay(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number);
+  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   return new Date(y, (m ?? 1) - 1, d ?? 1);
 }
 
