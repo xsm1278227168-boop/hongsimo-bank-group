@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { session } from './session.svelte';
 import { household } from './household.svelte';
+import { toasts } from './toast.svelte';
 import { toNum } from './format';
 import type { NetBalance, Transaction, UUID } from './types';
 
@@ -187,6 +188,7 @@ class LedgerStore {
   /** Live updates for the other phone's entries. INSERT is the only event the ledger can produce. */
   subscribe(householdId: UUID) {
     this.unsubscribe();
+    let warned = false;
     this.channel = supabase
       .channel(`tx:${householdId}`)
       .on(
@@ -202,7 +204,15 @@ class LedgerStore {
           void this.refreshNet();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        // A dead channel would otherwise be invisible: entries from the other
+        // phone would simply stop arriving until the app is reopened.
+        if (status === 'SUBSCRIBED') warned = false;
+        else if (!warned && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+          warned = true;
+          toasts.error('实时同步未连接，回到前台时会重新拉取。');
+        }
+      });
   }
 
   unsubscribe() {

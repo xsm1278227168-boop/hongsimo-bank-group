@@ -40,11 +40,11 @@
     <p>{household.members.map((m) => m.display_name).join(' 与 ')}</p>
   </header>
 
-  <BalanceCard>
-    {#if canSettle}
-      <button class="btn btn-block" onclick={() => (confirmSettle = true)}>结算</button>
-    {/if}
-  </BalanceCard>
+  <BalanceCard action={canSettle ? settleAction : undefined} />
+
+  {#snippet settleAction()}
+    <button class="btn btn-block" onclick={() => (confirmSettle = true)}>结算</button>
+  {/snippet}
 
   <EntryForm autofocus />
 

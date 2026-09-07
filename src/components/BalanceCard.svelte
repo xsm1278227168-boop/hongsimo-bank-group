@@ -4,7 +4,10 @@
   import { session } from '../lib/session.svelte';
   import { money } from '../lib/format';
 
-  let { children }: { children?: import('svelte').Snippet } = $props();
+  // An explicit snippet prop, not `children`: passing the button inside an
+  // {#if} in the parent's markup still yields a snippet, so `children` would
+  // always be truthy and reserve empty space under a settled balance.
+  let { action }: { action?: import('svelte').Snippet } = $props();
 
   const net = $derived(ledger.net);
   const amount = $derived(net?.amount ?? 0);
@@ -33,8 +36,8 @@
     </p>
   {/if}
 
-  {#if children}
-    <div class="action">{@render children()}</div>
+  {#if action}
+    <div class="action">{@render action()}</div>
   {/if}
 </section>
 
