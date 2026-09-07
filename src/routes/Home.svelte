@@ -1,12 +1,36 @@
 <script lang="ts">
   import { household } from '../lib/household.svelte';
   import { ledger } from '../lib/ledger.svelte';
+  import { network } from '../lib/network.svelte';
   import { router } from '../lib/router.svelte';
+  import { toasts } from '../lib/toast.svelte';
+  import { money } from '../lib/format';
   import BalanceCard from '../components/BalanceCard.svelte';
   import EntryForm from '../components/EntryForm.svelte';
   import TxRow from '../components/TxRow.svelte';
+  import Confirm from '../components/Confirm.svelte';
+
+  let confirmSettle = $state(false);
+  let settling = $state(false);
 
   const recent = $derived(ledger.items.slice(0, 5));
+  const net = $derived(ledger.net);
+  const canSettle = $derived(
+    !!net && net.amount > 0 && household.members.length === 2 && network.online
+  );
+
+  async function doSettle() {
+    settling = true;
+    try {
+      await ledger.settle();
+      toasts.ok('已结算');
+      confirmSettle = false;
+    } catch (err) {
+      toasts.error(err);
+    } finally {
+      settling = false;
+    }
+  }
 </script>
 
 <div class="page">
@@ -15,7 +39,11 @@
     <p>{household.members.map((m) => m.display_name).join(' 与 ')}</p>
   </header>
 
-  <BalanceCard />
+  <BalanceCard>
+    {#if canSettle}
+      <button class="btn btn-block" onclick={() => (confirmSettle = true)}>结算</button>
+    {/if}
+  </BalanceCard>
 
   <EntryForm autofocus />
 
@@ -39,6 +67,26 @@
   </div>
 </div>
 
+<Confirm
+  open={confirmSettle}
+  title="确认结算？"
+  confirmText="确认结算"
+  busy={settling}
+  onconfirm={doSettle}
+  oncancel={() => (confirmSettle = false)}
+>
+  {#if net}
+    <p class="line">
+      <strong>{household.nameOf(net.debtor)}</strong> 付给
+      <strong>{household.nameOf(net.creditor)}</strong>
+      <strong class="num">{money(net.amount, household.currency)}</strong>
+    </p>
+    <p class="small">
+      金额由数据库计算。确认后会新增一条结算记录，余额归零；不会删除任何已有记录。
+    </p>
+  {/if}
+</Confirm>
+
 <style>
   .recent-head {
     display: flex;
@@ -53,5 +101,19 @@
     font-size: 13px;
     color: var(--text-dim);
     padding: 2px 4px;
+  }
+
+  .line {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.7;
+  }
+
+  .small {
+    margin: 10px 0 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: var(--text-faint);
   }
 </style>
