@@ -309,15 +309,18 @@ begin
 
   ---------------------------------------------------------------------------
   -- 附加 10：第三人加入满员的 household  →  household is full
+  -- 附加 11：非成员对这个账本应当完全不可见、也完全写不动
   ---------------------------------------------------------------------------
   perform set_config('role', 'none', true);   -- 查 auth.users 需要 postgres 身份
   select id into v_c from auth.users where id <> v_a and id <> v_b limit 1;
 
   if v_c is null then
-    raise notice '附加 10 跳过: auth.users 里没有第三个用户，无法测试 household is full';
+    raise notice '附加 10/11 跳过: auth.users 里没有第三个用户';
   else
     delete from members where user_id = v_c;   -- rollback 时恢复
     perform pg_temp.act_as(v_c);
+
+    -- 附加 10
     v_err := null;
     begin
       perform join_household(v_code);
@@ -326,6 +329,100 @@ begin
     end;
     if v_err is null or v_err not like '%household is full%' then
       raise exception '附加 10 失败: 期望 household is full，实际 %', coalesce(v_err, '(没有抛出异常)');
+    end if;
+
+    -- 附加 11a：读 —— 表和三个视图都必须是 0 行。
+    -- 视图都是 security_invoker，所以底层表的 RLS 会照常生效；如果哪天有人把某个
+    -- 视图改回 security definer，这几条断言就是唯一会喊出来的地方。
+    select count(*) into v_rows from transactions;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 transactions', v_rows;
+    end if;
+
+    select count(*) into v_rows from member_receivables;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 member_receivables', v_rows;
+    end if;
+
+    select count(*) into v_rows from monthly_category_totals;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 monthly_category_totals', v_rows;
+    end if;
+
+    select count(*) into v_rows from monthly_person_totals;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 monthly_person_totals', v_rows;
+    end if;
+
+    select count(*) into v_rows from households;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 households', v_rows;
+    end if;
+
+    select count(*) into v_rows from members;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 members', v_rows;
+    end if;
+
+    select count(*) into v_rows from categories;
+    if v_rows <> 0 then
+      raise exception '附加 11 失败: 非成员读到了 % 行 categories', v_rows;
+    end if;
+
+    -- 附加 11b：知道 household_id 也没用，RPC 一律 forbidden
+    v_err := null;
+    begin
+      perform settle_up(v_hid);
+    exception when others then
+      v_err := sqlerrm;
+    end;
+    if v_err is null or v_err not like '%forbidden%' then
+      raise exception '附加 11 失败: 非成员调 settle_up 期望 forbidden，实际 %',
+        coalesce(v_err, '(没有抛出异常)');
+    end if;
+
+    v_err := null;
+    begin
+      perform reverse_transaction(v_t1);
+    exception when others then
+      v_err := sqlerrm;
+    end;
+    if v_err is null or v_err not like '%forbidden%' then
+      raise exception '附加 11 失败: 非成员调 reverse_transaction 期望 forbidden，实际 %',
+        coalesce(v_err, '(没有抛出异常)');
+    end if;
+
+    v_err := null;
+    begin
+      perform replace_transaction(v_t1, current_date, 10, v_c, 0.5, null, null);
+    exception when others then
+      v_err := sqlerrm;
+    end;
+    if v_err is null or v_err not like '%forbidden%' then
+      raise exception '附加 11 失败: 非成员调 replace_transaction 期望 forbidden，实际 %',
+        coalesce(v_err, '(没有抛出异常)');
+    end if;
+
+    -- 附加 11c：写 —— 往别人的账本里插记录必须被 RLS 拒绝
+    v_err := null;
+    begin
+      insert into transactions(household_id, type, amount, currency, payer_id, payer_share)
+      values (v_hid, 'expense', 999, 'CNY', v_c, 0.5);
+    exception when others then
+      v_err := sqlerrm;
+    end;
+    if v_err is null then
+      raise exception '附加 11 失败: 非成员 insert transactions 本应被 RLS 拒绝';
+    end if;
+
+    v_err := null;
+    begin
+      insert into categories(household_id, name, sort_order) values (v_hid, '偷插的类别', 1);
+    exception when others then
+      v_err := sqlerrm;
+    end;
+    if v_err is null then
+      raise exception '附加 11 失败: 非成员 insert categories 本应被 RLS 拒绝';
     end if;
   end if;
 

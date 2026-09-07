@@ -183,7 +183,10 @@ npm run preview   # 预览 dist/
 | 8b | `replace_transaction` | 冲销 + 新增原子完成；失败时不留下孤立的冲销记录；结算记录拒绝修改 |
 | 9 | 伪造 direction / type / created_by / currency | 全部被 RLS 拒绝 |
 | 10 | 第三人加入满员 household | `household is full` |
-| 11 | 固定名字 | 自定义名字被拒；创建者 = `Zod`，加入者自动 = `Sylvia` |
+| 11 | 非成员（第三个账号）读 `transactions` / `member_receivables` / `monthly_category_totals` / `monthly_person_totals` / `households` / `members` / `categories` | 全部 0 行 |
+| 11 | 非成员调 `settle_up` / `reverse_transaction` / `replace_transaction` | 全部 `forbidden` |
+| 11 | 非成员 insert `transactions` / `categories` | 被 RLS 拒绝 |
+| 12 | 固定名字 | 自定义名字被拒；创建者 = `Zod`，加入者自动 = `Sylvia` |
 
 全部通过会输出 `✅ 验证通过`。脚本以 `rollback` 结尾，**不会留下任何数据**，也不会动到你们已有的 household。
 
