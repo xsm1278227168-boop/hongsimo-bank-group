@@ -13,7 +13,7 @@
 1. [记账语义](#记账语义)
 2. [创建 Supabase 项目](#1-创建-supabase-项目)
 3. [运行 migration](#2-运行-migration)
-4. [配置 Auth](#3-配置-auth)
+4. [创建两个账号](#3-创建两个账号)
 5. [本地开发](#4-本地开发)
 6. [部署到 GitHub Pages](#5-部署到-github-pages)
 7. [手机安装](#6-手机安装)
@@ -71,29 +71,25 @@
 
 它会建好：表、索引、约束、RLS 策略、4 个 RPC（`create_household` / `join_household` / `reverse_transaction` / `settle_up`）、3 个 view、并把 `transactions` 加进 Realtime publication。
 
-## 3. 配置 Auth
+## 3. 创建两个账号
 
-**Authentication → URL Configuration**
+登录方式是**邮箱 + 密码**。应用里没有注册和找回密码入口，账号由你在控制台手动建。
+
+**Authentication → Users → Add user → Create new user**，建两个：
 
 | 字段 | 填什么 |
 |---|---|
-| Site URL | `https://<你的用户名>.github.io/hongsimo-bank-group/` |
-| Redirect URLs | 同上，再加一行 `http://localhost:5173/hongsimo-bank-group/` |
+| Email | 各自的邮箱 |
+| Password | 自己设一个 |
+| Auto Confirm User | **勾上**。不勾的话账号处于未确认状态，登录会被拒 |
 
-**Authentication → Providers → Email**
+建好后把邮箱和密码告诉对方。
 
-- 打开 Email provider。
-- 不需要密码登录，magic link 就够。
+**改密码**：在 Users 页点开该用户，用直接设新密码的入口（Reset password 一类）。**不要**用 Send password recovery —— 那封邮件里的链接需要应用有一个找回密码页面，而这里刻意没有。
 
-**（推荐）让邮件同时带上 6 位验证码**
+**Authentication → Providers → Email** 保持开启。另外建议把 **Allow new users to sign up** 关掉（位置随控制台版本不同，在 Sign In / Up、Settings 或 Providers → Email 里）：anon key 是公开的，不关的话任何人都能对着你的项目调 `signUp` 注册账号。RLS 仍会挡住他读写账本，但没必要留这个口子。
 
-**Authentication → Email Templates → Magic Link**，在模板里加一行：
-
-```html
-<p>如果链接打不开，也可以直接输入验证码：<strong>{{ .Token }}</strong></p>
-```
-
-原因见[常见问题](#点了邮件里的链接却没登录上)。
+不需要配置 Site URL / Redirect URLs，那是 magic link 用的。
 
 ## 4. 本地开发
 
@@ -128,7 +124,7 @@ npm run preview   # 预览 dist/
 
 1. 新建一个名为 **`hongsimo-bank-group`** 的 GitHub 仓库并推上去。
 
-   > 仓库名必须和 `vite.config.ts` 里的 `REPO_NAME` 一致，因为 GitHub Pages 把站点放在 `/<仓库名>/` 下。想换名字：改 `vite.config.ts` 顶部那一个常量，然后同步改 Supabase 的 Redirect URLs。
+   > 仓库名必须和 `vite.config.ts` 里的 `REPO_NAME` 一致，因为 GitHub Pages 把站点放在 `/<仓库名>/` 下。想换名字：改 `vite.config.ts` 顶部那一个常量。
    >
    > GitHub 仓库名只接受 ASCII 字母、数字、`-`、`_`、`.`，所以中文名只能出现在应用标题和 PWA 名称里（已经是「洪撕膜之银行集团」了），不能作为仓库名。
 
@@ -205,11 +201,13 @@ npm run preview   # 预览 dist/
 
 ## 常见问题
 
-### 点了邮件里的链接却没登录上
+### 登录提示「邮箱或密码错误」
 
-登录用的是 PKCE 流程，code verifier 存在**发起登录那个浏览器**的存储里。如果邮件是在微信 / QQ / Gmail 等 App 的内置浏览器里打开的，那是另一个存储环境，链接就换不到 session。
+按顺序排查：
 
-所以登录页在发送之后还会显示一个**「6 位验证码」**输入框 —— 验证码没有这个跨浏览器的问题。前提是按[第 3 步](#3-配置-auth)在邮件模板里加了 `{{ .Token }}`。
+1. 账号是否存在：**Authentication → Users** 里能看到这个邮箱。没有就按[第 3 步](#3-创建两个账号)建。
+2. 是否已确认：建账号时没勾 Auto Confirm 的话，登录页会明确提示「还没确认邮箱」而不是「邮箱或密码错误」；在该用户上执行 Confirm email 即可。
+3. 都对还是不行：在 Users 页给它重设密码。
 
 ### 提示「实时同步未连接」
 
@@ -255,7 +253,7 @@ v1 是单币种账本，币种在创建时决定，之后不改（`transactions`
 ```
 src/
   lib/
-    supabase.ts          Supabase client（PKCE）
+    supabase.ts          Supabase client
     session.svelte.ts    登录态
     household.svelte.ts  household / members / categories
     ledger.svelte.ts     流水、余额、Realtime、乐观更新
@@ -273,7 +271,7 @@ supabase/
 
 ### 几个刻意的决定
 
-**hash 路由。** GitHub Pages 没有 rewrite，hash 路由不需要 `404.html` 兜底。它同时决定了登录必须走 PKCE：implicit 流程会把 session 放在 URL fragment 里，正好和路由打架。
+**hash 路由。** GitHub Pages 没有 rewrite，hash 路由不需要 `404.html` 兜底。登录走邮箱 + 密码，不经过 URL，所以 `detectSessionInUrl` 关着，fragment 完全归路由管。
 
 **「修改」是一个 RPC，不是两次请求。** Brief 原本写的是点「修改」先调 `reverse_transaction`、再打开预填表单。那样一来，用户误点「修改」又关掉，原记录就已经被冲销了，留下一条没有替代品的作废记录。
 

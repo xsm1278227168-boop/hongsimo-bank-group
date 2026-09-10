@@ -1,51 +1,30 @@
 <script lang="ts">
-  import { supabase, configError, redirectTo } from '../lib/supabase';
-  import { toasts } from '../lib/toast.svelte';
+  import { configError } from '../lib/supabase';
+  import { session } from '../lib/session.svelte';
+  import { humanError } from '../lib/errors';
 
   let email = $state('');
-  let code = $state('');
-  let sending = $state(false);
-  let verifying = $state(false);
-  let sentTo = $state<string | null>(null);
+  let password = $state('');
+  let busy = $state(false);
+  let error = $state<string | null>(null);
 
-  const emailLooksValid = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()));
+  const canSubmit = $derived(
+    email.trim().length > 0 && password.length > 0 && !busy && !configError
+  );
 
-  async function sendLink(e: SubmitEvent) {
+  // Enter in either field submits: this is a real <form> with a submit button.
+  async function submit(e: SubmitEvent) {
     e.preventDefault();
-    if (!emailLooksValid || sending) return;
-    sending = true;
+    if (!canSubmit) return;
+    busy = true;
+    error = null;
     try {
-      const address = email.trim();
-      const { error } = await supabase.auth.signInWithOtp({
-        email: address,
-        options: { emailRedirectTo: redirectTo() }
-      });
-      if (error) throw error;
-      sentTo = address;
-      toasts.ok('登录邮件已发送');
-    } catch (err) {
-      toasts.error(err);
-    } finally {
-      sending = false;
-    }
-  }
-
-  async function verifyCode(e: SubmitEvent) {
-    e.preventDefault();
-    if (!sentTo || code.trim().length < 6 || verifying) return;
-    verifying = true;
-    try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: sentTo,
-        token: code.trim(),
-        type: 'email'
-      });
-      if (error) throw error;
+      await session.signIn(email.trim(), password);
       // onAuthStateChange takes it from here.
     } catch (err) {
-      toasts.error(err);
+      error = humanError(err);
     } finally {
-      verifying = false;
+      busy = false;
     }
   }
 </script>
@@ -60,47 +39,42 @@
     <p class="config-error">{configError}</p>
   {/if}
 
-  <form class="card" onsubmit={sendLink}>
+  <form class="card" onsubmit={submit}>
     <label class="field">
       <span class="label">邮箱</span>
       <input
         class="input"
         type="email"
         inputmode="email"
-        autocomplete="email"
+        autocomplete="username"
         placeholder="you@example.com"
         bind:value={email}
+        oninput={() => (error = null)}
         disabled={!!configError}
       />
     </label>
-    <button class="btn btn-primary btn-block" disabled={!emailLooksValid || sending || !!configError}>
-      {sending ? '发送中…' : sentTo ? '重新发送登录链接' : '发送登录链接'}
-    </button>
-    <p class="hint muted">无需密码。点击邮件里的链接即可登录。</p>
-  </form>
 
-  {#if sentTo}
-    <form class="card" onsubmit={verifyCode}>
-      <p class="sent">已发送到 <strong>{sentTo}</strong></p>
-      <!-- 邮件客户端的内置浏览器和这里不共享存储，链接可能打不开登录态；
-           这时候用邮件里的 6 位验证码更稳。 -->
-      <label class="field">
-        <span class="label">或输入邮件里的 6 位验证码</span>
-        <input
-          class="input code"
-          type="text"
-          inputmode="numeric"
-          autocomplete="one-time-code"
-          maxlength="6"
-          placeholder="······"
-          bind:value={code}
-        />
-      </label>
-      <button class="btn btn-block" disabled={code.trim().length < 6 || verifying}>
-        {verifying ? '验证中…' : '用验证码登录'}
-      </button>
-    </form>
-  {/if}
+    <label class="field">
+      <span class="label">密码</span>
+      <input
+        class="input"
+        type="password"
+        autocomplete="current-password"
+        bind:value={password}
+        oninput={() => (error = null)}
+        disabled={!!configError}
+      />
+    </label>
+
+    {#if error}
+      <p class="error" role="alert">{error}</p>
+    {/if}
+
+    <button class="btn btn-primary btn-block" disabled={!canSubmit}>
+      {busy ? '登录中…' : '登录'}
+    </button>
+    <p class="hint muted">账号由管理员创建，没有注册入口。</p>
+  </form>
 </main>
 
 <style>
@@ -128,22 +102,16 @@
     font-size: 14px;
   }
 
+  .error {
+    margin: -6px 0 14px;
+    font-size: 13.5px;
+    color: var(--negative);
+  }
+
   .hint {
     font-size: 13px;
     margin: 12px 0 0;
     text-align: center;
-  }
-
-  .sent {
-    margin: 0 0 14px;
-    font-size: 14px;
-    color: var(--text-dim);
-  }
-
-  .code {
-    letter-spacing: 0.5em;
-    text-align: center;
-    font-size: 20px;
   }
 
   .config-error {

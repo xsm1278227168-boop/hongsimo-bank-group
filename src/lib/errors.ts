@@ -24,8 +24,11 @@ const MAP: [RegExp, string][] = [
   [/duplicate key.*categories_household_id_name_key/i, '已经有同名类别了。'],
   [/violates check constraint "amount"|amount > 0/i, '金额必须大于 0。'],
   [/Failed to fetch|NetworkError|network/i, '网络连接失败，请检查网络后重试。'],
-  [/Token has expired|invalid.*token|otp_expired/i, '验证码或登录链接已过期，请重新获取。'],
-  [/over_email_send_rate_limit|rate limit/i, '发送太频繁了，请过一会儿再试。']
+  [/invalid login credentials|invalid_credentials/i, '邮箱或密码错误'],
+  // Forgetting "Auto Confirm" when creating the account looks exactly like a
+  // wrong password unless we say otherwise.
+  [/email not confirmed|email_not_confirmed/i, '这个账号还没确认邮箱：在 Supabase Users 页对它执行 Confirm email。'],
+  [/rate limit|over_request_rate_limit/i, '尝试太频繁了，请过一会儿再试。']
 ];
 
 export function humanError(err: unknown): string {

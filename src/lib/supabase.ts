@@ -13,15 +13,8 @@ export const supabase = createClient(url ?? 'http://invalid.local', anonKey ?? '
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
-    // PKCE returns the magic-link result as a ?code= query parameter. The
-    // implicit flow would put it in the URL fragment, which is exactly where
-    // our hash router lives.
-    flowType: 'pkce'
+    // Password sign-in never round-trips through the URL, and the hash router
+    // owns the fragment. Nothing should be parsed out of it.
+    detectSessionInUrl: false
   }
 });
-
-/** Where Supabase should send the user back after a magic link. */
-export function redirectTo(): string {
-  return location.origin + location.pathname;
-}
